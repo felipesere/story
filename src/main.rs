@@ -1,11 +1,15 @@
+use std::time::Duration;
+
+use anyhow::{anyhow, Result};
+use async_std::{
+    channel::{bounded, TryRecvError},
+    prelude::*,
+};
+use dialoguer::{console::Term, theme::ColorfulTheme, Select};
+use indicatif::ProgressBar;
 use leg::*;
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, anyhow};
 use serde_json;
-use dialoguer::{Select, theme::ColorfulTheme, console::Term};
-use async_std::prelude::*;
-use async_std::future;
-
 
 #[derive(Serialize, Deserialize)]
 struct Query {
@@ -19,7 +23,7 @@ struct Query {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Freshrelease {
-    issues: Vec<Item>
+    issues: Vec<Item>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,30 +40,45 @@ impl ToString for Item {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Token {
-    token: String
+    token: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    freshrelease: Token
+    freshrelease: Token,
 }
 
 #[async_std::main]
-async fn main() -> Result<()>  {
+async fn main() -> Result<()> {
     let x = std::fs::read_to_string("<YOUR_CONFIG>").unwrap();
-
 
     let config: Config = serde_json::from_str(&x)?;
 
     let l = tasks(&config.freshrelease, "2000000617");
     let r = tasks(&config.freshrelease, "2000002392");
 
+    let (tx, rx) = bounded(1);
+
+    std::thread::spawn(move || {
+        let p = ProgressBar::new_spinner();
+        loop {
+            match rx.try_recv() {
+                Err(TryRecvError::Empty) => {
+                    p.tick();
+                    std::thread::sleep(Duration::new(0, 50000));
+                }
+                Ok(()) => break,
+                e => panic!(e),
+            };
+        }
+    });
+
     let (left, right) = l.join(r).await;
+    tx.send(()).await?;
 
     let mut issues = left?.issues.clone();
     issues.extend(right?.issues);
     issues.sort_by(|a, b| a.key.cmp(&b.key));
-
 
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&issues)
@@ -67,7 +86,14 @@ async fn main() -> Result<()>  {
         .interact_on_opt(&Term::stderr())?;
 
     match selection {
-        Some(index) => success(&format!("User selected item : {}", issues[index].to_string()), None, None).await,
+        Some(index) => {
+            success(
+                &format!("User selected item : {}", issues[index].to_string()),
+                None,
+                None,
+            )
+            .await
+        }
         None => warn("User did not select anything", None, None).await,
     }
 
@@ -89,5 +115,8 @@ async fn tasks(token: &Token, id: &str) -> Result<Freshrelease> {
     let client = surf::Client::new();
 
     let mut response = client.send(req).await.map_err(|e| anyhow!(e))?;
-    response.body_json::<Freshrelease>().await.map_err(|e| anyhow!(e))
+    response
+        .body_json::<Freshrelease>()
+        .await
+        .map_err(|e| anyhow!(e))
 }
