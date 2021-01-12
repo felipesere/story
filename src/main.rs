@@ -1,13 +1,13 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use async_std::{channel::{Receiver, TryRecvError, bounded}, prelude::*};
+use async_std::prelude::*;
+use async_channel::{Receiver, TryRecvError, bounded};
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use indicatif::ProgressBar;
-use leg::*;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use clap::{Clap};
+use clap::Clap;
 use async_trait::async_trait;
 
 #[derive(Clap)]
