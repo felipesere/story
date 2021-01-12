@@ -1,3 +1,4 @@
+use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -6,6 +7,7 @@ use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::Clap;
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
+use directories_next::UserDirs;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -37,9 +39,7 @@ struct SelectCmd {}
 #[async_trait]
 impl Run for SelectCmd {
     async fn run(self) -> Result<()> {
-        let x = std::fs::read_to_string("<YOUR_CONFIG>").unwrap();
-
-        let config: Config = serde_json::from_str(&x)?;
+        let config = read_config();
 
         let l = tasks(&config.freshrelease, "2000000617");
         let r = tasks(&config.freshrelease, "2000002392");
@@ -140,17 +140,28 @@ async fn tasks(token: &Token, id: &str) -> Result<Freshrelease> {
 }
 
 fn spinner(rx: Receiver<()>) {
-    std::thread::spawn(move || {
-        let p = ProgressBar::new_spinner();
+    spawn(move || {
+        let progress = ProgressBar::new_spinner();
         loop {
             match rx.try_recv() {
                 Err(TryRecvError::Empty) => {
-                    p.tick();
-                    std::thread::sleep(Duration::new(0, 50000));
+                    progress.tick();
+                    sleep(Duration::new(0, 50000));
                 }
                 Ok(()) => break,
                 e => panic!(e),
             };
         }
     });
+}
+
+fn read_config() -> Config {
+    let config_path = UserDirs::new()
+        .map(|u| u.home_dir().to_owned())
+        .unwrap()
+        .join("<YOUR CONFIG>");
+
+    let config_content = std::fs::read_to_string(config_path).unwrap();
+
+    serde_json::from_str(&config_content).expect("parse the configuration")
 }
