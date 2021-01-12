@@ -1,18 +1,17 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
+use async_std::channel::{bounded, Receiver, TryRecvError};
 use async_std::prelude::*;
-use async_channel::{Receiver, TryRecvError, bounded};
+use async_trait::async_trait;
+use clap::Clap;
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use clap::Clap;
-use async_trait::async_trait;
 
 #[derive(Clap)]
 struct Opts {
-
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
@@ -33,8 +32,7 @@ impl Run for SubCommand {
 }
 
 #[derive(Clap)]
-struct SelectCmd {
-}
+struct SelectCmd {}
 
 #[async_trait]
 impl Run for SelectCmd {
@@ -73,8 +71,6 @@ impl Run for SelectCmd {
 trait Run {
     async fn run(self) -> Result<()>;
 }
-
-
 
 #[derive(Serialize, Deserialize)]
 struct Query {
