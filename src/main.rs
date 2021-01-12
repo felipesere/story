@@ -8,6 +8,8 @@ use async_trait::async_trait;
 use clap::Clap;
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use directories_next::UserDirs;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -41,16 +43,24 @@ impl Run for SelectCmd {
     async fn run(self) -> Result<()> {
         let config = read_config();
 
-        let l = tasks(&config.freshrelease, "2000000617");
-        let r = tasks(&config.freshrelease, "2000002392");
+        let ids = vec!["2000000617", "2000002392"];
+
+        let tasks = FuturesUnordered::new();
+        ids.iter()
+            .map(|id| team_tasks(&config.freshrelease, id))
+            .for_each(|t| tasks.push(t));
 
         let (tx, rx) = bounded(1);
         spinner(rx);
-        let (left, right) = l.join(r).await;
+        let fs: Vec<Result<Freshrelease>> = tasks.collect().await;
         tx.send(()).await?;
 
-        let mut issues = left?.issues.clone();
-        issues.extend(right?.issues);
+        let mut issues: Vec<Item> = fs
+            .into_iter()
+            .flatten()
+            .map(|f| f.issues)
+            .flatten()
+            .collect();
         issues.sort_by(|a, b| a.key.cmp(&b.key));
 
         let selection = Select::with_theme(&ColorfulTheme::default())
@@ -118,7 +128,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn tasks(token: &Token, id: &str) -> Result<Freshrelease> {
+async fn team_tasks(token: &Token, id: &str) -> Result<Freshrelease> {
     let query = Query {
         condition: "status_id".into(),
         operator: "is".into(),

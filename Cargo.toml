@@ -17,3 +17,4 @@ shellexpand = "2.1.0"
 surf = "2.1.0"
 async-std = { version = "1.8.0", features = ["unstable", "attributes"]}
 directories-next = "2.0.0"
+futures = "0.3"
