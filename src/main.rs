@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_std::channel::{bounded, Receiver, TryRecvError};
+use async_std::fs::File;
 use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::Clap;
@@ -14,6 +15,8 @@ use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
+const HOOK_BASH: &str = include_str!("../hook.bash");
+
 #[derive(Clap)]
 struct Opts {
     #[clap(subcommand)]
@@ -23,6 +26,7 @@ struct Opts {
 #[derive(Clap)]
 enum SubCommand {
     Select(SelectCmd),
+    Install(InstallCmd),
 }
 
 #[async_trait]
@@ -31,7 +35,27 @@ impl Run for SubCommand {
         use SubCommand::*;
         match self {
             Select(s) => s.run().await,
+            Install(s) => s.run().await,
         }
+    }
+}
+
+#[derive(Clap)]
+struct InstallCmd {}
+
+#[async_trait]
+impl Run for InstallCmd {
+    async fn run(self) -> Result<()> {
+        let mut hook_file = File::create(".git/hooks/prepare-commit-msg").await?;
+        hook_file.write_all(HOOK_BASH.as_bytes()).await?;
+
+        let mut ignore = async_std::fs::OpenOptions::new()
+            .append(true)
+            .open(".gitignore")
+            .await?;
+        ignore.write_all(b".story\n").await?;
+
+        Ok(())
     }
 }
 
@@ -68,10 +92,12 @@ impl Run for SelectCmd {
             .default(0)
             .interact_on_opt(&Term::stderr())?;
 
-        match selection {
-            Some(index) => println!("selected: {}", issues[index].to_string()),
-            None => println!("User did not select anything"),
-        };
+        let index = selection.ok_or(anyhow!("Nothing matched"))?;
+
+        let mut story_file = File::create(".story").await?;
+        story_file
+            .write_all(format!("story_id={}", issues[index].key).as_bytes())
+            .await?;
 
         Ok(())
     }
