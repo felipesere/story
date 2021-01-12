@@ -1,15 +1,80 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use async_std::{
-    channel::{bounded, TryRecvError},
-    prelude::*,
-};
+use async_std::{channel::{Receiver, TryRecvError, bounded}, prelude::*};
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use indicatif::ProgressBar;
 use leg::*;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use clap::{Clap};
+use async_trait::async_trait;
+
+#[derive(Clap)]
+struct Opts {
+
+    #[clap(subcommand)]
+    subcmd: SubCommand,
+}
+
+#[derive(Clap)]
+enum SubCommand {
+    Select(SelectCmd),
+}
+
+#[async_trait]
+impl Run for SubCommand {
+    async fn run(self) -> Result<()> {
+        use SubCommand::*;
+        match self {
+            Select(s) => s.run().await,
+        }
+    }
+}
+
+#[derive(Clap)]
+struct SelectCmd {
+}
+
+#[async_trait]
+impl Run for SelectCmd {
+    async fn run(self) -> Result<()> {
+        let x = std::fs::read_to_string("<YOUR_CONFIG>").unwrap();
+
+        let config: Config = serde_json::from_str(&x)?;
+
+        let l = tasks(&config.freshrelease, "2000000617");
+        let r = tasks(&config.freshrelease, "2000002392");
+
+        let (tx, rx) = bounded(1);
+        spinner(rx);
+        let (left, right) = l.join(r).await;
+        tx.send(()).await?;
+
+        let mut issues = left?.issues.clone();
+        issues.extend(right?.issues);
+        issues.sort_by(|a, b| a.key.cmp(&b.key));
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .items(&issues)
+            .default(0)
+            .interact_on_opt(&Term::stderr())?;
+
+        match selection {
+            Some(index) => println!("selected: {}", issues[index].to_string()),
+            None => println!("User did not select anything"),
+        };
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+trait Run {
+    async fn run(self) -> Result<()>;
+}
+
+
 
 #[derive(Serialize, Deserialize)]
 struct Query {
@@ -50,52 +115,9 @@ struct Config {
 
 #[async_std::main]
 async fn main() -> Result<()> {
-    let x = std::fs::read_to_string("<YOUR_CONFIG>").unwrap();
+    let o: Opts = Opts::parse();
 
-    let config: Config = serde_json::from_str(&x)?;
-
-    let l = tasks(&config.freshrelease, "2000000617");
-    let r = tasks(&config.freshrelease, "2000002392");
-
-    let (tx, rx) = bounded(1);
-
-    std::thread::spawn(move || {
-        let p = ProgressBar::new_spinner();
-        loop {
-            match rx.try_recv() {
-                Err(TryRecvError::Empty) => {
-                    p.tick();
-                    std::thread::sleep(Duration::new(0, 50000));
-                }
-                Ok(()) => break,
-                e => panic!(e),
-            };
-        }
-    });
-
-    let (left, right) = l.join(r).await;
-    tx.send(()).await?;
-
-    let mut issues = left?.issues.clone();
-    issues.extend(right?.issues);
-    issues.sort_by(|a, b| a.key.cmp(&b.key));
-
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&issues)
-        .default(0)
-        .interact_on_opt(&Term::stderr())?;
-
-    match selection {
-        Some(index) => {
-            success(
-                &format!("User selected item : {}", issues[index].to_string()),
-                None,
-                None,
-            )
-            .await
-        }
-        None => warn("User did not select anything", None, None).await,
-    }
+    o.subcmd.run().await?;
 
     Ok(())
 }
@@ -119,4 +141,20 @@ async fn tasks(token: &Token, id: &str) -> Result<Freshrelease> {
         .body_json::<Freshrelease>()
         .await
         .map_err(|e| anyhow!(e))
+}
+
+fn spinner(rx: Receiver<()>) {
+    std::thread::spawn(move || {
+        let p = ProgressBar::new_spinner();
+        loop {
+            match rx.try_recv() {
+                Err(TryRecvError::Empty) => {
+                    p.tick();
+                    std::thread::sleep(Duration::new(0, 50000));
+                }
+                Ok(()) => break,
+                e => panic!(e),
+            };
+        }
+    });
 }

@@ -16,7 +16,9 @@ shellexpand = "2.1.0"
 dialoguer = "0.7.1"
 console = "0.14.0"
 indicatif = "0.15.0"
+clap = "3.0.0-beta.2"
+async-trait = "0.1.42"
 
 [dependencies.async-std]
-version = "1.7.0"
+version = "1.8.0"
 features = ["attributes"]
