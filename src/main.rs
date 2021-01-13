@@ -1,16 +1,16 @@
+use std::os::unix::fs::PermissionsExt;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_std::channel::{bounded, Receiver, TryRecvError};
-use async_std::fs::File;
+use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::Clap;
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -27,6 +27,7 @@ struct Opts {
 enum SubCommand {
     Select(SelectCmd),
     Install(InstallCmd),
+    Complete(CompleteCmd),
 }
 
 #[async_trait]
@@ -36,6 +37,7 @@ impl Run for SubCommand {
         match self {
             Select(s) => s.run().await,
             Install(s) => s.run().await,
+            Complete(s) => s.run().await,
         }
     }
 }
@@ -46,8 +48,10 @@ struct InstallCmd {}
 #[async_trait]
 impl Run for InstallCmd {
     async fn run(self) -> Result<()> {
+        let executable = std::fs::Permissions::from_mode(0o755);
         let mut hook_file = File::create(".git/hooks/prepare-commit-msg").await?;
         hook_file.write_all(HOOK_BASH.as_bytes()).await?;
+        hook_file.set_permissions(executable).await?;
 
         let mut ignore = async_std::fs::OpenOptions::new()
             .append(true)
@@ -60,23 +64,33 @@ impl Run for InstallCmd {
 }
 
 #[derive(Clap)]
+struct CompleteCmd {}
+
+#[async_trait]
+impl Run for CompleteCmd {
+    async fn run(self) -> Result<()> {
+        remove_file(".story").await.map_err(|e| anyhow!(e))
+    }
+}
+
+#[derive(Clap)]
 struct SelectCmd {}
 
 #[async_trait]
 impl Run for SelectCmd {
     async fn run(self) -> Result<()> {
-        let config = read_config();
-
-        let ids = vec!["2000000617", "2000002392"];
+        let Config { freshrelease } = read_config();
 
         let tasks = FuturesUnordered::new();
-        ids.iter()
-            .map(|id| team_tasks(&config.freshrelease, id))
+        freshrelease
+            .condition_ids
+            .iter()
+            .map(|id| team_tasks(&freshrelease.token, id))
             .for_each(|t| tasks.push(t));
 
         let (tx, rx) = bounded(1);
         spinner(rx);
-        let fs: Vec<Result<Freshrelease>> = tasks.collect().await;
+        let fs: Vec<Result<FreshreleaseResponse>> = tasks.collect().await;
         tx.send(()).await?;
 
         let mut issues: Vec<Item> = fs
@@ -119,7 +133,7 @@ struct Query {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Freshrelease {
+struct FreshreleaseResponse {
     issues: Vec<Item>,
 }
 
@@ -141,8 +155,15 @@ struct Token {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+struct Freshrelease {
+    #[serde(flatten)]
+    token: Token,
+    condition_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    freshrelease: Token,
+    freshrelease: Freshrelease,
 }
 
 #[async_std::main]
@@ -154,7 +175,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn team_tasks(token: &Token, id: &str) -> Result<Freshrelease> {
+async fn team_tasks(token: &Token, id: &str) -> Result<FreshreleaseResponse> {
     let query = Query {
         condition: "status_id".into(),
         operator: "is".into(),
@@ -170,7 +191,7 @@ async fn team_tasks(token: &Token, id: &str) -> Result<Freshrelease> {
 
     let mut response = client.send(req).await.map_err(|e| anyhow!(e))?;
     response
-        .body_json::<Freshrelease>()
+        .body_json::<FreshreleaseResponse>()
         .await
         .map_err(|e| anyhow!(e))
 }
