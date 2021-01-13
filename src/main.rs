@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_std::channel::{bounded, Receiver, TryRecvError};
-use async_std::fs::{remove_file, File};
+use async_std::fs::{File, remove_file};
 use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Clap;
-use dialoguer::{console::Term, theme::ColorfulTheme, Select};
+use dialoguer::{console::Term, Select, theme::ColorfulTheme, Confirm};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
 use indicatif::ProgressBar;
@@ -20,9 +20,9 @@ const HOOK_BASH: &str = include_str!("../hook.bash");
 
 #[derive(Clap)]
 #[clap(
-    setting = ColoredHelp,
-    setting = DisableHelpSubcommand,
-    setting = DeriveDisplayOrder,
+setting = ColoredHelp,
+setting = DisableHelpSubcommand,
+setting = DeriveDisplayOrder,
 )]
 struct Opts {
     #[clap(subcommand)]
@@ -118,9 +118,28 @@ struct InstallCmd {}
 impl Run for InstallCmd {
     async fn run(self) -> Result<()> {
         let executable = std::fs::Permissions::from_mode(0o755);
+
+        let create_hook = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Create hook file?")
+            .default(true)
+            .interact()?;
+
+        if !create_hook {
+            return Ok(());
+        }
+
         let mut hook_file = File::create(".git/hooks/prepare-commit-msg").await?;
         hook_file.write_all(HOOK_BASH.as_bytes()).await?;
         hook_file.set_permissions(executable).await?;
+
+        let add_to_gitignore = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Add .story to the gitignore")
+            .default(true)
+            .interact()?;
+
+        if !add_to_gitignore {
+            return Ok(())
+        }
 
         let mut ignore = async_std::fs::OpenOptions::new()
             .append(true)
@@ -175,11 +194,9 @@ impl Run for SelectCmd {
             .default(0)
             .interact()?;
 
-        let index = selection.ok_or(anyhow!("Nothing matched"))?;
-
         let mut story_file = File::create(".story").await?;
         story_file
-            .write_all(format!("story_id={}", issues[index].key).as_bytes())
+            .write_all(format!("story_id={}", issues[selection].key).as_bytes())
             .await?;
 
         Ok(())
