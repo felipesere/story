@@ -7,6 +7,7 @@ use async_std::channel::{bounded, Receiver, TryRecvError};
 use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
 use async_trait::async_trait;
+use clap::AppSettings::*;
 use clap::Clap;
 use dialoguer::{console::Term, theme::ColorfulTheme, Select};
 use directories_next::UserDirs;
@@ -18,6 +19,11 @@ use serde_json;
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
 #[derive(Clap)]
+#[clap(
+    setting = ColoredHelp,
+    setting = DisableHelpSubcommand,
+    setting = DeriveDisplayOrder,
+)]
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
@@ -25,8 +31,13 @@ struct Opts {
 
 #[derive(Clap)]
 enum SubCommand {
+    #[clap(about = "Select which story you are working on")]
     Select(SelectCmd),
+
+    #[clap(about = "Install the required prepare-message-hook and add an entry to .gitignore")]
     Install(InstallCmd),
+
+    #[clap(about = "Complete the story and remove it from .story")]
     Complete(CompleteCmd),
 }
 
@@ -104,7 +115,7 @@ impl Run for SelectCmd {
         let selection = Select::with_theme(&ColorfulTheme::default())
             .items(&issues)
             .default(0)
-            .interact_on_opt(&Term::stderr())?;
+            .interact()?;
 
         let index = selection.ok_or(anyhow!("Nothing matched"))?;
 
