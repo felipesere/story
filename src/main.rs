@@ -9,7 +9,7 @@ use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Clap;
-use dialoguer::{console::Term, Select, theme::ColorfulTheme, Confirm};
+use dialoguer::{Select, theme::ColorfulTheme, Confirm};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
 use indicatif::ProgressBar;
