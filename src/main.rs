@@ -42,6 +42,64 @@ enum SubCommand {
 }
 
 #[async_trait]
+trait Run {
+    async fn run(self) -> Result<()>;
+}
+
+#[derive(Serialize, Deserialize)]
+struct Query {
+    #[serde(rename = "query_hash[0][condition]")]
+    condition: String,
+    #[serde(rename = "query_hash[0][operator]")]
+    operator: String,
+    #[serde(rename = "query_hash[0][value]")]
+    value: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct FreshreleaseResponse {
+    issues: Vec<Item>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Item {
+    key: String,
+    title: String,
+}
+
+impl ToString for Item {
+    fn to_string(&self) -> String {
+        format!("{} - {}", self.key, self.title)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Token {
+    token: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Freshrelease {
+    #[serde(flatten)]
+    token: Token,
+    condition_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Config {
+    freshrelease: Freshrelease,
+}
+
+#[async_std::main]
+async fn main() -> Result<()> {
+    let o: Opts = Opts::parse();
+
+    o.subcmd.run().await?;
+
+    Ok(())
+}
+
+#[async_trait]
 impl Run for SubCommand {
     async fn run(self) -> Result<()> {
         use SubCommand::*;
@@ -126,64 +184,6 @@ impl Run for SelectCmd {
 
         Ok(())
     }
-}
-
-#[async_trait]
-trait Run {
-    async fn run(self) -> Result<()>;
-}
-
-#[derive(Serialize, Deserialize)]
-struct Query {
-    #[serde(rename = "query_hash[0][condition]")]
-    condition: String,
-    #[serde(rename = "query_hash[0][operator]")]
-    operator: String,
-    #[serde(rename = "query_hash[0][value]")]
-    value: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct FreshreleaseResponse {
-    issues: Vec<Item>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Item {
-    key: String,
-    title: String,
-}
-
-impl ToString for Item {
-    fn to_string(&self) -> String {
-        format!("{} - {}", self.key, self.title)
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Token {
-    token: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Freshrelease {
-    #[serde(flatten)]
-    token: Token,
-    condition_ids: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Config {
-    freshrelease: Freshrelease,
-}
-
-#[async_std::main]
-async fn main() -> Result<()> {
-    let o: Opts = Opts::parse();
-
-    o.subcmd.run().await?;
-
-    Ok(())
 }
 
 async fn team_tasks(token: &Token, id: &str) -> Result<FreshreleaseResponse> {
