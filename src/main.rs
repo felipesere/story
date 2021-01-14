@@ -20,9 +20,11 @@ const HOOK_BASH: &str = include_str!("../hook.bash");
 
 #[derive(Clap)]
 #[clap(
+setting = ColorAlways,
+setting = ColorAuto,
 setting = ColoredHelp,
-setting = DisableHelpSubcommand,
 setting = DeriveDisplayOrder,
+setting = VersionlessSubcommands,
 )]
 struct Opts {
     #[clap(subcommand)]
@@ -84,6 +86,8 @@ struct Freshrelease {
     #[serde(flatten)]
     token: Token,
     in_progress: Vec<String>,
+    priority: Vec<String>,
+    inbox: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -113,6 +117,11 @@ impl Run for SubCommand {
 }
 
 #[derive(Clap)]
+#[clap(
+setting = ColorAlways,
+setting = ColoredHelp,
+setting = DeriveDisplayOrder,
+)]
 struct InstallCmd {}
 
 #[async_trait]
@@ -153,6 +162,11 @@ impl Run for InstallCmd {
 }
 
 #[derive(Clap)]
+#[clap(
+setting = ColorAlways,
+setting = ColoredHelp,
+setting = DeriveDisplayOrder,
+)]
 struct CompleteCmd {}
 
 #[async_trait]
@@ -163,7 +177,25 @@ impl Run for CompleteCmd {
 }
 
 #[derive(Clap)]
-struct SelectCmd {}
+#[clap(
+setting = ColorAlways,
+setting = ColoredHelp,
+setting = DeriveDisplayOrder,
+)]
+struct SelectCmd {
+    #[clap(
+        about = "Select from the inbox column",
+        long = "inbox",
+        conflicts_with = "priority"
+    )]
+    inbox: bool,
+    #[clap(
+        about = "Select from the priority column",
+        long = "priority",
+        conflicts_with = "inbox"
+    )]
+    priority: bool,
+}
 
 #[async_trait]
 impl Run for SelectCmd {
@@ -171,10 +203,16 @@ impl Run for SelectCmd {
         let Config { freshrelease } = read_config();
 
         let tasks = FuturesUnordered::new();
-        freshrelease
-            .in_progress
-            .iter()
-            .map(|id| team_tasks(&freshrelease.token, id))
+        let mut ids = freshrelease.in_progress.clone();
+        if self.inbox {
+            ids = freshrelease.inbox.clone();
+        }
+        if self.priority {
+            ids = freshrelease.priority.clone();
+        }
+
+        ids.into_iter()
+            .map(|id| team_tasks(&freshrelease.token, id.clone()))
             .for_each(|t| tasks.push(t));
 
         let (tx, rx) = bounded(1);
@@ -189,7 +227,7 @@ impl Run for SelectCmd {
             .flatten()
             .collect();
 
-        issues.sort_by(|a, b| a.position.cmp(&b.position));
+        issues.sort_by(|a, b| a.position.cmp(&b.position).reverse());
 
         let selection = Select::with_theme(&ColorfulTheme::default())
             .items(&issues)
@@ -205,11 +243,11 @@ impl Run for SelectCmd {
     }
 }
 
-async fn team_tasks(token: &Token, id: &str) -> Result<FreshreleaseResponse> {
+async fn team_tasks(token: &Token, id: String) -> Result<FreshreleaseResponse> {
     let query = Query {
         condition: "status_id".into(),
         operator: "is".into(),
-        value: id.to_string(),
+        value: id,
     };
 
     let mut req = surf::get("<YOUR INSTANCE>.freshrelease.com/PT/issues").build();
