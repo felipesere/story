@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use async_std::channel::{bounded, Receiver, TryRecvError};
-use async_std::fs::{File, remove_file};
+use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Clap;
-use dialoguer::{Select, theme::ColorfulTheme, Confirm};
+use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
 use indicatif::ProgressBar;
@@ -65,6 +65,7 @@ struct FreshreleaseResponse {
 struct Item {
     key: String,
     title: String,
+    position: i32,
 }
 
 impl ToString for Item {
@@ -82,7 +83,7 @@ struct Token {
 struct Freshrelease {
     #[serde(flatten)]
     token: Token,
-    condition_ids: Vec<String>,
+    in_progress: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -138,7 +139,7 @@ impl Run for InstallCmd {
             .interact()?;
 
         if !add_to_gitignore {
-            return Ok(())
+            return Ok(());
         }
 
         let mut ignore = async_std::fs::OpenOptions::new()
@@ -171,7 +172,7 @@ impl Run for SelectCmd {
 
         let tasks = FuturesUnordered::new();
         freshrelease
-            .condition_ids
+            .in_progress
             .iter()
             .map(|id| team_tasks(&freshrelease.token, id))
             .for_each(|t| tasks.push(t));
@@ -187,7 +188,8 @@ impl Run for SelectCmd {
             .map(|f| f.issues)
             .flatten()
             .collect();
-        issues.sort_by(|a, b| a.key.cmp(&b.key));
+
+        issues.sort_by(|a, b| a.position.cmp(&b.position));
 
         let selection = Select::with_theme(&ColorfulTheme::default())
             .items(&issues)
