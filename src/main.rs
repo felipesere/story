@@ -15,6 +15,7 @@ use futures::stream::FuturesUnordered;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::fs::read_to_string;
 
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
@@ -51,9 +52,9 @@ trait Run {
 #[derive(Serialize, Deserialize)]
 struct Query {
     #[serde(rename = "query_hash[0][condition]")]
-    condition: String,
+    condition: &'static str,
     #[serde(rename = "query_hash[0][operator]")]
-    operator: String,
+    operator: &'static str,
     #[serde(rename = "query_hash[0][value]")]
     value: String,
 }
@@ -83,6 +84,7 @@ struct Token {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Freshrelease {
+    base_url: String,
     #[serde(flatten)]
     token: Token,
     in_progress: Vec<String>,
@@ -200,7 +202,7 @@ struct SelectCmd {
 #[async_trait]
 impl Run for SelectCmd {
     async fn run(self) -> Result<()> {
-        let Config { freshrelease } = read_config();
+        let Config { freshrelease } = read_config()?;
 
         let tasks = FuturesUnordered::new();
         let mut ids = freshrelease.in_progress.clone();
@@ -212,7 +214,7 @@ impl Run for SelectCmd {
         }
 
         ids.into_iter()
-            .map(|id| team_tasks(&freshrelease.token, id.clone()))
+            .map(|id| team_tasks(&freshrelease, id))
             .for_each(|t| tasks.push(t));
 
         let (tx, rx) = bounded(1);
@@ -243,21 +245,22 @@ impl Run for SelectCmd {
     }
 }
 
-async fn team_tasks(token: &Token, id: String) -> Result<FreshreleaseResponse> {
+async fn team_tasks(fresh: &Freshrelease, id: String) -> Result<FreshreleaseResponse> {
     let query = Query {
-        condition: "status_id".into(),
-        operator: "is".into(),
+        condition: "status_id",
+        operator: "is",
         value: id,
     };
 
-    let mut req = surf::get("<YOUR INSTANCE>.freshrelease.com/PT/issues").build();
+    let mut req = surf::get(format!("{}/issues", fresh.base_url)).build();
     req.set_query(&query).expect("setting query");
-    req.set_header("authorization", format!("Token {}", token.token));
+    req.set_header("authorization", format!("Token {}", fresh.token.token));
     req.set_header("accept", "application/json");
 
-    let client = surf::Client::new();
-
-    let mut response = client.send(req).await.map_err(|e| anyhow!(e))?;
+    let mut response = surf::Client::new()
+        .send(req)
+        .await
+        .map_err(|e| anyhow!(e))?;
     response
         .body_json::<FreshreleaseResponse>()
         .await
@@ -280,13 +283,10 @@ fn spinner(rx: Receiver<()>) {
     });
 }
 
-fn read_config() -> Config {
-    let config_path = UserDirs::new()
-        .map(|u| u.home_dir().to_owned())
-        .unwrap()
-        .join("<YOUR CONFIG>");
-
-    let config_content = std::fs::read_to_string(config_path).unwrap();
-
-    serde_json::from_str(&config_content).expect("parse the configuration")
+fn read_config() -> Result<Config> {
+    UserDirs::new()
+        .map(|u| u.home_dir().to_owned().join(".story.json"))
+        .ok_or(anyhow!("could not read config!"))
+        .and_then(|config_path| read_to_string(config_path).map_err(|e| anyhow!(e)))
+        .and_then(|content| serde_json::from_str(&content).map_err(|e| anyhow!(e)))
 }
