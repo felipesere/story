@@ -1,4 +1,6 @@
+use std::fs::read_to_string;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
@@ -9,13 +11,14 @@ use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Clap;
+use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::fs::read_to_string;
+use std::process::Command;
 
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
@@ -42,6 +45,9 @@ enum SubCommand {
 
     #[clap(about = "Complete the story and remove it from .story")]
     Complete(CompleteCmd),
+
+    #[clap(about = "Show and edit the story config")]
+    Config(ConfigCmd),
 }
 
 #[async_trait]
@@ -77,12 +83,12 @@ impl ToString for Item {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 struct Token {
     token: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 struct Freshrelease {
     base_url: String,
     #[serde(flatten)]
@@ -92,7 +98,7 @@ struct Freshrelease {
     inbox: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 struct Config {
     freshrelease: Freshrelease,
 }
@@ -114,6 +120,7 @@ impl Run for SubCommand {
             Select(s) => s.run().await,
             Install(s) => s.run().await,
             Complete(s) => s.run().await,
+            Config(s) => s.run().await,
         }
     }
 }
@@ -175,6 +182,53 @@ struct CompleteCmd {}
 impl Run for CompleteCmd {
     async fn run(self) -> Result<()> {
         remove_file(".story").await.map_err(|e| anyhow!(e))
+    }
+}
+
+#[derive(Clap)]
+#[clap(
+setting = ColorAlways,
+setting = ColoredHelp,
+setting = DeriveDisplayOrder,
+)]
+struct ConfigCmd {
+    #[clap(about = "Edit the configuration", long = "edit")]
+    edit: bool,
+}
+
+#[async_trait]
+impl Run for ConfigCmd {
+    async fn run(self) -> Result<()> {
+        let c = config_path();
+
+        if !std::fs::metadata(&c).is_ok() {
+            let create_config = Confirm::with_theme(&ColorfulTheme::default())
+                .with_prompt("We didn't find a config. Should we create one now?")
+                .default(true)
+                .interact()?;
+
+            if create_config {
+                let d = Config::default();
+                let json = serde_json::to_string_pretty(&d)?;
+                std::fs::write(&c, json)?;
+            } else {
+                return Ok(());
+            }
+        }
+
+        if self.edit {
+            let editor = edit::get_editor().expect("Couldn't get an editor");
+            let mut h = Command::new(editor)
+                .arg(c)
+                .spawn()
+                .expect("Couldn't run editor");
+            h.wait()?;
+        } else {
+            let f = std::fs::read_to_string(c)?;
+            println!("{}", f.to_colored_json_auto()?);
+        }
+
+        Ok(())
     }
 }
 
@@ -261,6 +315,7 @@ async fn team_tasks(fresh: &Freshrelease, id: String) -> Result<FreshreleaseResp
         .send(req)
         .await
         .map_err(|e| anyhow!(e))?;
+
     response
         .body_json::<FreshreleaseResponse>()
         .await
@@ -284,9 +339,14 @@ fn spinner(rx: Receiver<()>) {
 }
 
 fn read_config() -> Result<Config> {
+    let p = config_path();
+    read_to_string(p)
+        .map_err(|e| anyhow!(e))
+        .and_then(|content| serde_json::from_str(&content).map_err(|e| anyhow!(e)))
+}
+
+fn config_path() -> PathBuf {
     UserDirs::new()
         .map(|u| u.home_dir().to_owned().join(".story.json"))
-        .ok_or(anyhow!("could not read config!"))
-        .and_then(|config_path| read_to_string(config_path).map_err(|e| anyhow!(e)))
-        .and_then(|content| serde_json::from_str(&content).map_err(|e| anyhow!(e)))
+        .expect("Could not find path to home")
 }

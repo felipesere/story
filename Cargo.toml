@@ -18,3 +18,5 @@ surf = "2.1.0"
 async-std = { version = "1.8.0", features = ["unstable", "attributes"]}
 directories-next = "2.0.0"
 futures = "0.3"
+colored_json = "2.1.0"
+edit = "0.1.2"
