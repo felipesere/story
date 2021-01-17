@@ -105,6 +105,10 @@ struct Config {
 
 #[async_std::main]
 async fn main() -> Result<()> {
+    ctrlc::set_handler(move || {
+        println!("\x1b[?25h") // reset the terminal
+    })?;
+
     let o: Opts = Opts::parse();
 
     o.subcmd.run().await?;
