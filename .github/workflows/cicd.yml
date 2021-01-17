@@ -1,0 +1,103 @@
+name: CICD
+
+env:
+  MIN_SUPPORTED_RUST_VERSION: "1.42.0"
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { os: macos-10.15  , target: x86_64-apple-darwin }
+    steps:
+    - name: Git checkout
+      uses: actions/checkout@v2
+    - name: Extract crate information
+      shell: bash
+      run: |
+        echo "PROJECT_NAME=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml)" >> $GITHUB_ENV
+        echo "PROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> $GITHUB_ENV
+        echo "PROJECT_MAINTAINER=$(sed -n 's/^authors = \["\(.*\)"\]/\1/p' Cargo.toml)" >> $GITHUB_ENV
+        echo "PROJECT_HOMEPAGE=$(sed -n 's/^homepage = "\(.*\)"/\1/p' Cargo.toml)" >> $GITHUB_ENV
+    - name: Initialize workflow variables
+      id: vars
+      shell: bash
+      run: |
+        # staging directory
+        STAGING='_staging'
+        echo ::set-output name=STAGING::${STAGING}
+        # determine EXE suffix
+        EXE_suffix="" ; case ${{ matrix.job.target }} in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
+        echo ::set-output name=EXE_suffix::${EXE_suffix}
+        unset IS_RELEASE ; if [[ $GITHUB_REF =~ ^refs/tags/v[0-9].* ]]; then IS_RELEASE='true' ; fi
+        echo ::set-output name=IS_RELEASE::${IS_RELEASE}
+        # target-specific options
+        # # * test only library unit tests and binary for arm-type targets
+        unset CARGO_TEST_OPTIONS
+        unset CARGO_TEST_OPTIONS ; case ${{ matrix.job.target }} in arm-* | aarch64-*) CARGO_TEST_OPTIONS="--lib --bin ${PROJECT_NAME}" ;; esac;
+        echo ::set-output name=CARGO_TEST_OPTIONS::${CARGO_TEST_OPTIONS}
+        # * executable for `strip`?
+        STRIP="strip" ; case ${{ matrix.job.target }} in arm-unknown-linux-gnueabihf) STRIP="arm-linux-gnueabihf-strip" ;; aarch64-unknown-linux-gnu) STRIP="aarch64-linux-gnu-strip" ;; *-pc-windows-msvc) STRIP="" ;; esac;
+        echo ::set-output name=STRIP::${STRIP}
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.job.target }}
+        override: true
+        profile: minimal # minimal component installation (ie, no documentation)
+    - name: Info
+      shell: bash
+      run: |
+        gcc --version || true
+        rustup -V
+        rustup toolchain list
+        rustup default
+        cargo -V
+        rustc -V
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: ${{ matrix.job.use-cross }}
+        command: build
+        args: --release --target=${{ matrix.job.target }} ${{ matrix.job.cargo-options }}
+    - name: Package
+      id: package
+      shell: bash
+      run: |
+        PKG_suffix=".tar.gz"
+        PKG_BASENAME=${PROJECT_NAME}-v${PROJECT_VERSION}-${{ matrix.job.target }}
+        PKG_NAME=${PKG_BASENAME}${PKG_suffix}
+        echo ::set-output name=PKG_NAME::${PKG_NAME}
+
+        ARCHIVE_DIR="${{ steps.vars.outputs.STAGING }}/${PKG_BASENAME}/"
+        mkdir -p "${ARCHIVE_DIR}"
+
+        # Binary
+        cp 'target/${{ matrix.job.target }}/release/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' "$ARCHIVE_DIR"
+
+        # `strip` binary (if needed)
+        if [ -n "${{ steps.vars.outputs.STRIP }}" ]; then "${{ steps.vars.outputs.STRIP }}" "$ARCHIVE_DIR/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}" ; fi
+
+        # base compressed package
+        pushd '${{ steps.vars.outputs.STAGING }}/' >/dev/null
+        tar czf "${PKG_NAME}" "${PKG_BASENAME}"/*
+        popd >/dev/null
+    - name: Upload package artifact
+      uses: actions/upload-artifact@master
+      with:
+        name: ${{ steps.package.outputs.PKG_NAME }}
+        path: ${{ steps.vars.outputs.STAGING }}/${{ steps.package.outputs.PKG_NAME }}
+    - name: Publish archives and packages
+      uses: softprops/action-gh-release@v1
+      if: steps.vars.outputs.IS_RELEASE
+      with:
+        files: |
+          ${{ steps.vars.outputs.STAGING }}/${{ steps.package.outputs.PKG_NAME }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
