@@ -30,7 +30,7 @@ setting = ColorAuto,
 setting = ColoredHelp,
 setting = DeriveDisplayOrder,
 setting = VersionlessSubcommands,
-version = crate_version!(),
+version = env!("FANCY_VERSION")
 )]
 struct Opts {
     #[clap(subcommand)]

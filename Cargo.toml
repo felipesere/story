@@ -3,6 +3,7 @@ name = "story"
 version = "0.0.1"
 authors = ["Felipe Sere <felipesere@gmail.com>"]
 edition = "2018"
+build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.37"
@@ -21,3 +22,6 @@ futures = "0.3"
 colored_json = "2.1.0"
 edit = "0.1.2"
 ctrlc = "3.1.7"
+
+[build-dependencies]
+built = { version = "0.4.4", features = ["git2"] }
