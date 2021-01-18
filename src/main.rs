@@ -29,6 +29,7 @@ setting = ColorAuto,
 setting = ColoredHelp,
 setting = DeriveDisplayOrder,
 setting = VersionlessSubcommands,
+version = env!("FANCY_VERSION")
 )]
 struct Opts {
     #[clap(subcommand)]
@@ -205,7 +206,7 @@ impl Run for ConfigCmd {
     async fn run(self) -> Result<()> {
         let c = config_path();
 
-        if !std::fs::metadata(&c).is_ok() {
+        if std::fs::metadata(&c).is_err() {
             let create_config = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt("We didn't find a config. Should we create one now?")
                 .default(true)
