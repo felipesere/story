@@ -11,7 +11,6 @@ use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Clap;
-use clap::crate_version;
 use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
@@ -207,7 +206,7 @@ impl Run for ConfigCmd {
     async fn run(self) -> Result<()> {
         let c = config_path();
 
-        if !std::fs::metadata(&c).is_ok() {
+        if std::fs::metadata(&c).is_err() {
             let create_config = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt("We didn't find a config. Should we create one now?")
                 .default(true)

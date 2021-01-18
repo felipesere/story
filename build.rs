@@ -7,8 +7,11 @@ fn main() {
         .flatten()
         .map(|(_, sha)| sha)
         .or_else(|| std::env::var("GITHUB_SHA").ok())
-        .unwrap_or("none".into());
+        .unwrap_or_else(|| "none".into());
 
     let pkg_version = env!("CARGO_PKG_VERSION");
-    println!(r#"cargo:rustc-env=FANCY_VERSION="{} ({})""#, pkg_version, sha)
+    println!(
+        r#"cargo:rustc-env=FANCY_VERSION="{} ({})""#,
+        pkg_version, sha
+    )
 }
