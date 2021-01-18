@@ -11,6 +11,7 @@ use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Clap;
+use clap::crate_version;
 use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
@@ -29,6 +30,7 @@ setting = ColorAuto,
 setting = ColoredHelp,
 setting = DeriveDisplayOrder,
 setting = VersionlessSubcommands,
+version = crate_version!(),
 )]
 struct Opts {
     #[clap(subcommand)]
