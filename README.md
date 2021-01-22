@@ -37,17 +37,22 @@ Sampe config:
   "freshrelease": {
     "base_url": "<URL to your freshrelease instance>",
     "token": "<YOUR-TOKEN-HERE>",
-    "in_progress": ["...", "..."],
-    "priority": ["..."],
-    "inbox": ["..."]
+    "teams": [
+      {
+        "short_code": "...",
+        "in_progress": "...",
+        "priority": "...",
+        "inbox": "..."
+      }
+    ]
   }
 }
 
 ```
 
-The `...` need to be replaced with `status_id` which are sadly specific to your board.
-
-
+You can be in multiple teams and retrieve their tasks.
+Each team has a `short_code` that you can get from the URL.
+The `...` for `in_progress`, `priority`, and `inbox` need to be replaced with `status_id` which are sadly specific to your team/board.
 
 # Random little notes
 
@@ -64,7 +69,7 @@ http https://<YOUR INSTANCE>.freshrelease.com/<YOUR TEAM>/statuses \
 The `position` property gives the order in the column. The lower the `postition`, the further up the board:
 
 ```bash
-http "https://<YOUR INSTANCE>.freshrelease.com/<YOUR TEAM>/issues?query_hash[0][condition]=status_id&query_hash[0][operator]=is&query_hash[0][value]=2000000629" \
+http "https://<YOUR INSTANCE>.freshrelease.com/<YOUR TEAM SHORT CODE>/issues?query_hash[0][condition]=status_id&query_hash[0][operator]=is&query_hash[0][value]=2000000629" \
 	"authorization:Token <XYZ>" \
   "accept:application/json" | jq '.issues | sort_by(.position) | reverse'
 ```

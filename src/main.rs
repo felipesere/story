@@ -1,6 +1,7 @@
 use std::fs::read_to_string;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::Command;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
@@ -16,9 +17,9 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
 use indicatif::ProgressBar;
+use serde::__private::Formatter;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::process::Command;
 
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
@@ -29,7 +30,7 @@ setting = ColorAuto,
 setting = ColoredHelp,
 setting = DeriveDisplayOrder,
 setting = VersionlessSubcommands,
-version = env!("FANCY_VERSION")
+version = env ! ("FANCY_VERSION")
 )]
 struct Opts {
     #[clap(subcommand)]
@@ -89,14 +90,50 @@ struct Token {
     token: String,
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.token)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct TeamConfig {
+    short_code: String,
+    in_progress: String,
+    priority: String,
+    inbox: String,
+}
+
+#[derive(Clone, Copy)]
+enum Column {
+    InProgress,
+    Priority,
+    Inbox,
+}
+
+impl TeamConfig {
+    async fn get_tasks(&self, fresh: &Freshrelease, column: Column) -> Result<Vec<Item>> {
+        use Column::*;
+        let id = match column {
+            InProgress => self.in_progress.clone(),
+            Priority => self.priority.clone(),
+            Inbox => self.inbox.clone(),
+        };
+
+        let url = format!("{}/{}/issues", fresh.base_url, self.short_code);
+
+        let response = team_tasks(url.clone(), &fresh.token, id).await?;
+
+        Ok(response.issues)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Freshrelease {
     base_url: String,
     #[serde(flatten)]
     token: Token,
-    in_progress: Vec<String>,
-    priority: Vec<String>,
-    inbox: Vec<String>,
+    teams: Vec<TeamConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -263,30 +300,25 @@ impl Run for SelectCmd {
     async fn run(self) -> Result<()> {
         let Config { freshrelease } = read_config()?;
 
-        let tasks = FuturesUnordered::new();
-        let mut ids = freshrelease.in_progress.clone();
-        if self.inbox {
-            ids = freshrelease.inbox.clone();
-        }
-        if self.priority {
-            ids = freshrelease.priority.clone();
-        }
+        let column = if self.inbox {
+            Column::Inbox
+        } else if self.priority {
+            Column::Priority
+        } else {
+            Column::InProgress
+        };
 
-        ids.into_iter()
-            .map(|id| team_tasks(&freshrelease, id))
-            .for_each(|t| tasks.push(t));
+        let tasks = FuturesUnordered::new();
+        for team in freshrelease.teams.iter() {
+            tasks.push(team.get_tasks(&freshrelease, column));
+        }
 
         let (tx, rx) = bounded(1);
         spinner(rx);
-        let fs: Vec<Result<FreshreleaseResponse>> = tasks.collect().await;
+        let fs: Vec<Result<Vec<Item>>> = tasks.collect().await;
         tx.send(()).await?;
 
-        let mut issues: Vec<Item> = fs
-            .into_iter()
-            .flatten()
-            .map(|f| f.issues)
-            .flatten()
-            .collect();
+        let mut issues: Vec<Item> = fs.into_iter().flatten().flatten().collect();
 
         issues.sort_by(|a, b| a.position.cmp(&b.position).reverse());
 
@@ -304,16 +336,16 @@ impl Run for SelectCmd {
     }
 }
 
-async fn team_tasks(fresh: &Freshrelease, id: String) -> Result<FreshreleaseResponse> {
+async fn team_tasks(url: String, token: &Token, id: String) -> Result<FreshreleaseResponse> {
     let query = Query {
         condition: "status_id",
         operator: "is",
         value: id,
     };
 
-    let mut req = surf::get(format!("{}/issues", fresh.base_url)).build();
+    let mut req = surf::get(url).build();
     req.set_query(&query).expect("setting query");
-    req.set_header("authorization", format!("Token {}", fresh.token.token));
+    req.set_header("authorization", format!("Token {}", token));
     req.set_header("accept", "application/json");
 
     let mut response = surf::Client::new()
