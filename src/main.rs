@@ -1,9 +1,9 @@
-use std::fs::read_to_string;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
+use std::{env::current_dir, fs::read_to_string, path::Path};
 
 use anyhow::{anyhow, Result};
 use async_std::channel::{bounded, Receiver, TryRecvError};
@@ -16,6 +16,7 @@ use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
+use git2::Repository;
 use indicatif::ProgressBar;
 use serde::__private::Formatter;
 use serde::{Deserialize, Serialize};
@@ -54,7 +55,7 @@ enum SubCommand {
 
 #[async_trait]
 trait Run {
-    async fn run(self) -> Result<()>;
+    async fn run(self, root: &Path) -> Result<()>;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -147,22 +148,29 @@ async fn main() -> Result<()> {
         println!("\x1b[?25h") // reset the terminal
     })?;
 
+    let cwd = current_dir()?;
+    let repo = Repository::discover(&cwd).map_err(|_| anyhow!("Not in a git repo!"))?;
+    let root = repo
+        .path()
+        .parent()
+        .expect("Unable to step out of the .git folder");
+
     let o: Opts = Opts::parse();
 
-    o.subcmd.run().await?;
+    o.subcmd.run(root).await?;
 
     Ok(())
 }
 
 #[async_trait]
 impl Run for SubCommand {
-    async fn run(self) -> Result<()> {
+    async fn run(self, root: &Path) -> Result<()> {
         use SubCommand::*;
         match self {
-            Select(s) => s.run().await,
-            Install(s) => s.run().await,
-            Complete(s) => s.run().await,
-            Config(s) => s.run().await,
+            Select(s) => s.run(root).await,
+            Install(s) => s.run(root).await,
+            Complete(s) => s.run(root).await,
+            Config(s) => s.run(root).await,
         }
     }
 }
@@ -177,7 +185,7 @@ struct InstallCmd {}
 
 #[async_trait]
 impl Run for InstallCmd {
-    async fn run(self) -> Result<()> {
+    async fn run(self, root: &Path) -> Result<()> {
         let executable = std::fs::Permissions::from_mode(0o755);
 
         let create_hook = Confirm::with_theme(&ColorfulTheme::default())
@@ -189,7 +197,7 @@ impl Run for InstallCmd {
             return Ok(());
         }
 
-        let mut hook_file = File::create(".git/hooks/prepare-commit-msg").await?;
+        let mut hook_file = File::create(root.join(".git/hooks/prepare-commit-msg")).await?;
         hook_file.write_all(HOOK_BASH.as_bytes()).await?;
         hook_file.set_permissions(executable).await?;
 
@@ -204,7 +212,7 @@ impl Run for InstallCmd {
 
         let mut ignore = async_std::fs::OpenOptions::new()
             .append(true)
-            .open(".gitignore")
+            .open(root.join(".gitignore"))
             .await?;
         ignore.write_all(b".story\n").await?;
 
@@ -222,8 +230,10 @@ struct CompleteCmd {}
 
 #[async_trait]
 impl Run for CompleteCmd {
-    async fn run(self) -> Result<()> {
-        remove_file(".story").await.map_err(|e| anyhow!(e))
+    async fn run(self, root: &Path) -> Result<()> {
+        remove_file(root.join(".story"))
+            .await
+            .map_err(|e| anyhow!(e))
     }
 }
 
@@ -240,7 +250,7 @@ struct ConfigCmd {
 
 #[async_trait]
 impl Run for ConfigCmd {
-    async fn run(self) -> Result<()> {
+    async fn run(self, _root: &Path) -> Result<()> {
         let c = config_path();
 
         if std::fs::metadata(&c).is_err() {
@@ -297,7 +307,7 @@ struct SelectCmd {
 
 #[async_trait]
 impl Run for SelectCmd {
-    async fn run(self) -> Result<()> {
+    async fn run(self, root: &Path) -> Result<()> {
         let Config { freshrelease } = read_config()?;
 
         let column = if self.inbox {
@@ -327,7 +337,7 @@ impl Run for SelectCmd {
             .default(0)
             .interact()?;
 
-        let mut story_file = File::create(".story").await?;
+        let mut story_file = File::create(root.join(".story")).await?;
         story_file
             .write_all(format!("story_id={}", issues[selection].key).as_bytes())
             .await?;
