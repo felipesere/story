@@ -11,7 +11,7 @@ use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
 use async_trait::async_trait;
 use clap::AppSettings::*;
-use clap::Clap;
+use clap::Parser;
 use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
@@ -24,21 +24,18 @@ use serde_json;
 
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(
-setting = ColorAlways,
-setting = ColorAuto,
-setting = ColoredHelp,
+color = clap::ColorChoice::Always,
 setting = DeriveDisplayOrder,
-setting = VersionlessSubcommands,
-version = env ! ("FANCY_VERSION")
+version = env!("FANCY_VERSION")
 )]
 struct Opts {
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 enum SubCommand {
     #[clap(about = "Select which story you are working on")]
     Select(SelectCmd),
@@ -175,10 +172,9 @@ impl Run for SubCommand {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(
-setting = ColorAlways,
-setting = ColoredHelp,
+color = clap::ColorChoice::Always,
 setting = DeriveDisplayOrder,
 )]
 struct InstallCmd {}
@@ -220,10 +216,9 @@ impl Run for InstallCmd {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(
-setting = ColorAlways,
-setting = ColoredHelp,
+color = clap::ColorChoice::Always,
 setting = DeriveDisplayOrder,
 )]
 struct CompleteCmd {}
@@ -237,14 +232,14 @@ impl Run for CompleteCmd {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(
-setting = ColorAlways,
-setting = ColoredHelp,
+color = clap::ColorChoice::Always,
 setting = DeriveDisplayOrder,
 )]
 struct ConfigCmd {
-    #[clap(about = "Edit the configuration", long = "edit")]
+    /// Edit the configuration
+    #[clap(long = "edit")]
     edit: bool,
 }
 
@@ -284,21 +279,21 @@ impl Run for ConfigCmd {
     }
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 #[clap(
-setting = ColorAlways,
-setting = ColoredHelp,
 setting = DeriveDisplayOrder,
+color = clap::ColorChoice::Always,
 )]
 struct SelectCmd {
+    /// Select from the inbox column
     #[clap(
-        about = "Select from the inbox column",
         long = "inbox",
         conflicts_with = "priority"
     )]
     inbox: bool,
+
+    /// Select from the priority column
     #[clap(
-        about = "Select from the priority column",
         long = "priority",
         conflicts_with = "inbox"
     )]
