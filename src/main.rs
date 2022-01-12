@@ -1,3 +1,5 @@
+use std::fmt::Formatter;
+use std::fs::{metadata, write, Permissions};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -18,9 +20,7 @@ use directories_next::UserDirs;
 use futures::stream::FuturesUnordered;
 use git2::Repository;
 use indicatif::ProgressBar;
-use serde::__private::Formatter;
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
@@ -182,8 +182,6 @@ struct InstallCmd {}
 #[async_trait]
 impl Run for InstallCmd {
     async fn run(self, root: &Path) -> Result<()> {
-        let executable = std::fs::Permissions::from_mode(0o755);
-
         let create_hook = Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Create hook file?")
             .default(true)
@@ -195,7 +193,9 @@ impl Run for InstallCmd {
 
         let mut hook_file = File::create(root.join(".git/hooks/prepare-commit-msg")).await?;
         hook_file.write_all(HOOK_BASH.as_bytes()).await?;
-        hook_file.set_permissions(executable).await?;
+        hook_file
+            .set_permissions(Permissions::from_mode(0o755))
+            .await?;
 
         let add_to_gitignore = Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Add .story to the gitignore")
@@ -246,9 +246,9 @@ struct ConfigCmd {
 #[async_trait]
 impl Run for ConfigCmd {
     async fn run(self, _root: &Path) -> Result<()> {
-        let c = config_path();
+        let config_path = config_path();
 
-        if std::fs::metadata(&c).is_err() {
+        if metadata(&config_path).is_err() {
             let create_config = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt("We didn't find a config. Should we create one now?")
                 .default(true)
@@ -257,7 +257,7 @@ impl Run for ConfigCmd {
             if create_config {
                 let d = Config::default();
                 let json = serde_json::to_string_pretty(&d)?;
-                std::fs::write(&c, json)?;
+                write(&config_path, json)?;
             } else {
                 return Ok(());
             }
@@ -266,12 +266,12 @@ impl Run for ConfigCmd {
         if self.edit {
             let editor = edit::get_editor().expect("Couldn't get an editor");
             let mut h = Command::new(editor)
-                .arg(c)
+                .arg(config_path)
                 .spawn()
                 .expect("Couldn't run editor");
             h.wait()?;
         } else {
-            let f = std::fs::read_to_string(c)?;
+            let f = std::fs::read_to_string(config_path)?;
             println!("{}", f.to_colored_json_auto()?);
         }
 
@@ -286,17 +286,11 @@ color = clap::ColorChoice::Always,
 )]
 struct SelectCmd {
     /// Select from the inbox column
-    #[clap(
-        long = "inbox",
-        conflicts_with = "priority"
-    )]
+    #[clap(long = "inbox", conflicts_with = "priority")]
     inbox: bool,
 
     /// Select from the priority column
-    #[clap(
-        long = "priority",
-        conflicts_with = "inbox"
-    )]
+    #[clap(long = "priority", conflicts_with = "inbox")]
     priority: bool,
 }
 
@@ -374,7 +368,7 @@ fn spinner(rx: Receiver<()>) {
                     sleep(Duration::new(0, 50000));
                 }
                 Ok(()) => break,
-                e => panic!(e),
+                e => panic!("{:?}", e),
             };
         }
     });
