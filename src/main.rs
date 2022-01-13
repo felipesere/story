@@ -17,10 +17,12 @@ use clap::Parser;
 use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use directories_next::UserDirs;
-use futures::stream::FuturesUnordered;
 use git2::Repository;
 use indicatif::ProgressBar;
+use jira::JiraConfig;
 use serde::{Deserialize, Serialize};
+
+mod jira;
 
 const HOOK_BASH: &str = include_str!("../hook.bash");
 
@@ -103,40 +105,15 @@ struct TeamConfig {
 }
 
 #[derive(Clone, Copy)]
-enum Column {
+pub enum Column {
+    Todo,
     InProgress,
-    Priority,
-    Inbox,
-}
-
-impl TeamConfig {
-    async fn get_tasks(&self, fresh: &Freshrelease, column: Column) -> Result<Vec<Item>> {
-        use Column::*;
-        let id = match column {
-            InProgress => self.in_progress.clone(),
-            Priority => self.priority.clone(),
-            Inbox => self.inbox.clone(),
-        };
-
-        let url = format!("{}/{}/issues", fresh.base_url, self.short_code);
-
-        let response = team_tasks(url.clone(), &fresh.token, id).await?;
-
-        Ok(response.issues)
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct Freshrelease {
-    base_url: String,
-    #[serde(flatten)]
-    token: Token,
-    teams: Vec<TeamConfig>,
+    Done,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Config {
-    freshrelease: Freshrelease,
+    jira: JiraConfig,
 }
 
 #[async_std::main]
@@ -144,6 +121,8 @@ async fn main() -> Result<()> {
     ctrlc::set_handler(move || {
         println!("\x1b[?25h") // reset the terminal
     })?;
+
+    env_logger::init();
 
     let cwd = current_dir()?;
     let repo = Repository::discover(&cwd).map_err(|_| anyhow!("Not in a git repo!"))?;
@@ -286,76 +265,44 @@ color = clap::ColorChoice::Always,
 )]
 struct SelectCmd {
     /// Select from the inbox column
-    #[clap(long = "inbox", conflicts_with = "priority")]
-    inbox: bool,
+    #[clap(long = "todo", conflicts_with = "done")]
+    todo: bool,
 
     /// Select from the priority column
-    #[clap(long = "priority", conflicts_with = "inbox")]
-    priority: bool,
+    #[clap(long = "done", conflicts_with = "todo")]
+    done: bool,
 }
 
 #[async_trait]
 impl Run for SelectCmd {
     async fn run(self, root: &Path) -> Result<()> {
-        let Config { freshrelease } = read_config()?;
+        let Config { jira, .. } = read_config()?;
 
-        let column = if self.inbox {
-            Column::Inbox
-        } else if self.priority {
-            Column::Priority
+        let column = if self.todo {
+            Column::Todo
+        } else if self.done {
+            Column::Done
         } else {
             Column::InProgress
         };
 
-        let tasks = FuturesUnordered::new();
-        for team in freshrelease.teams.iter() {
-            tasks.push(team.get_tasks(&freshrelease, column));
-        }
-
         let (tx, rx) = bounded(1);
         spinner(rx);
-        let fs: Vec<Result<Vec<Item>>> = tasks.collect().await;
+        let tasks = jira.get_matching_tasks(column).await?;
         tx.send(()).await?;
 
-        let mut issues: Vec<Item> = fs.into_iter().flatten().flatten().collect();
-
-        issues.sort_by(|a, b| a.position.cmp(&b.position).reverse());
-
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .items(&issues)
+            .items(&tasks)
             .default(0)
             .interact()?;
 
         let mut story_file = File::create(root.join(".story")).await?;
         story_file
-            .write_all(format!("story_id={}", issues[selection].key).as_bytes())
+            .write_all(format!("story_id={}", tasks[selection].key).as_bytes())
             .await?;
 
         Ok(())
     }
-}
-
-async fn team_tasks(url: String, token: &Token, id: String) -> Result<FreshreleaseResponse> {
-    let query = Query {
-        condition: "status_id",
-        operator: "is",
-        value: id,
-    };
-
-    let mut req = surf::get(url).build();
-    req.set_query(&query).expect("setting query");
-    req.set_header("authorization", format!("Token {}", token));
-    req.set_header("accept", "application/json");
-
-    let mut response = surf::Client::new()
-        .send(req)
-        .await
-        .map_err(|e| anyhow!(e))?;
-
-    response
-        .body_json::<FreshreleaseResponse>()
-        .await
-        .map_err(|e| anyhow!(e))
 }
 
 fn spinner(rx: Receiver<()>) {

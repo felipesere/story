@@ -12,12 +12,12 @@ fi
 
 # allow overwriting of story
 if [[ "$STORY" != "" ]]; then
-  sed -i '' -e  "1s/.*/$STORY : /" $1
+  sed -i '' -e  "1s/.*/$STORY: /" $1
   exit 0
 fi
 
 story_file="$(git rev-parse --show-toplevel)/.story"
 if [[ -f "$story_file" ]]; then
   source $story_file
-  sed -i '' -e  "1s/.*/$story_id : /" $1
+  sed -i '' -e  "1s/.*/$story_id: /" $1
 fi
