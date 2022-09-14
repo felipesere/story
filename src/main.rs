@@ -125,7 +125,7 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let cwd = current_dir()?;
-    let repo = Repository::discover(&cwd).map_err(|_| anyhow!("Not in a git repo!"))?;
+    let repo = Repository::discover(&cwd).context("Not in a git repo!")?;
     let root = repo
         .path()
         .parent()
@@ -276,7 +276,7 @@ struct SelectCmd {
 #[async_trait]
 impl Run for SelectCmd {
     async fn run(self, root: &Path) -> Result<()> {
-        let Config { jira, .. } = read_config()?;
+        let Config { jira } = read_config()?;
 
         let column = if self.todo {
             Column::Todo
@@ -308,14 +308,9 @@ impl Run for SelectCmd {
 fn spinner(rx: Receiver<()>) {
     spawn(move || {
         let progress = ProgressBar::new_spinner();
-        loop {
-            match rx.try_recv() {
-                Err(TryRecvError::Empty) => {
-                    progress.tick();
-                    sleep(Duration::new(0, 50000));
-                }
-                Err(TryRecvError::Closed) | Ok(()) => break,
-            };
+        while let Err(TryRecvError::Empty) = rx.try_recv() {
+            progress.tick();
+            sleep(Duration::new(0, 50000));
         }
     });
 }

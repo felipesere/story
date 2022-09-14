@@ -6,8 +6,7 @@ fn main() {
     let dirty = built::util::get_repo_description(src.as_ref())
         .ok()
         .flatten()
-        .map(|(_, dirty)| dirty)
-        .unwrap_or(false);
+        .map_or(false, |(_, dirty)| dirty);
 
     let sha = built::util::get_repo_head(src.as_ref())
         .ok()
