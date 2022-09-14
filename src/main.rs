@@ -7,7 +7,7 @@ use std::thread::{sleep, spawn};
 use std::time::Duration;
 use std::{env::current_dir, fs::read_to_string, path::Path};
 
-use anyhow::{anyhow, Result, Context};
+use anyhow::{anyhow, Context, Result};
 use async_std::channel::{bounded, Receiver, TryRecvError};
 use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
@@ -313,7 +313,7 @@ fn spinner(rx: Receiver<()>) {
                 Err(TryRecvError::Empty) => {
                     progress.tick();
                     sleep(Duration::new(0, 50000));
-                },
+                }
                 Err(TryRecvError::Closed) | Ok(()) => break,
             };
         }

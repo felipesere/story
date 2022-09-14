@@ -16,19 +16,10 @@ fn main() {
             sha.truncate(7);
             sha
         })
-        .map(|sha| {
-            if dirty {
-                format!("{}-dirty", sha)
-            } else {
-                sha
-            }
-        })
+        .map(|sha| if dirty { format!("{}-dirty", sha) } else { sha })
         .or_else(|| std::env::var("GITHUB_SHA").ok())
         .unwrap_or_else(|| "none".into());
 
     let pkg_version = env!("CARGO_PKG_VERSION");
-    println!(
-        r#"cargo:rustc-env=FANCY_VERSION={} ({})"#,
-        pkg_version, sha
-    )
+    println!(r#"cargo:rustc-env=FANCY_VERSION={} ({})"#, pkg_version, sha)
 }

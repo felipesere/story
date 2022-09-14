@@ -25,11 +25,11 @@ impl Jql {
             parts.push(format!(r#"{}="{}""#, k, v));
         }
         let status = match column {
-            Column::Todo =>  todo!(),
+            Column::Todo => todo!(),
             Column::InProgress => "In Progress",
             Column::Done => "Done",
         };
-        parts.push(format!(r#"status="{}""#, status)); 
+        parts.push(format!(r#"status="{}""#, status));
 
         parts.join(" and ")
     }
@@ -48,7 +48,7 @@ impl Default for JiraConfig {
             base_url: "https://path.to.your.jira.com".into(),
             auth: JiraAuth {
                 user: "your user".into(),
-                personal_access_token: "your access token".into()
+                personal_access_token: "your access token".into(),
             },
             query: Jql(HashMap::new()),
         }
@@ -89,7 +89,7 @@ impl JiraConfig {
         #[derive(Serialize)]
         struct Params {
             jql: String,
-            #[serde(rename= "maxResults")]
+            #[serde(rename = "maxResults")]
             max_results: usize,
         }
 
@@ -100,14 +100,14 @@ impl JiraConfig {
 
         let client = surf::Client::new();
 
-        let credentials = base64::encode(format!("{}:{}", self.auth.user, self.auth.personal_access_token));
-        
+        let credentials = base64::encode(format!(
+            "{}:{}",
+            self.auth.user, self.auth.personal_access_token
+        ));
+
         let body: Value = client
             .get(&self.base_url)
-            .header(
-                "Authorization",
-                format!("Basic {}", credentials),
-            )
+            .header("Authorization", format!("Basic {}", credentials))
             .query(&params)
             .map_err(|e| anyhow::anyhow!(e))?
             .recv_json()
