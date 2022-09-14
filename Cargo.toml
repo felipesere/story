@@ -1,7 +1,7 @@
 [package]
 name = "story"
 version = "0.0.4"
-authors = ["Felipe Sere <felipesere@gmail.com>"]
+authors = ["Felipe Sere <github@felipesere.com>"]
 edition = "2021"
 build = "build.rs"
 
