@@ -7,7 +7,7 @@ use std::thread::{sleep, spawn};
 use std::time::Duration;
 use std::{env::current_dir, fs::read_to_string, path::Path};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Result, Context};
 use async_std::channel::{bounded, Receiver, TryRecvError};
 use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use clap::AppSettings::*;
 use clap::Parser;
 use colored_json::prelude::*;
-use dialoguer::{theme::ColorfulTheme, Confirm, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use directories_next::UserDirs;
 use git2::Repository;
 use indicatif::ProgressBar;
@@ -291,7 +291,7 @@ impl Run for SelectCmd {
         let tasks = jira.get_matching_tasks(column).await?;
         tx.send(()).await?;
 
-        let selection = Select::with_theme(&ColorfulTheme::default())
+        let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
             .items(&tasks)
             .default(0)
             .interact()?;
@@ -313,9 +313,8 @@ fn spinner(rx: Receiver<()>) {
                 Err(TryRecvError::Empty) => {
                     progress.tick();
                     sleep(Duration::new(0, 50000));
-                }
-                Ok(()) => break,
-                e => panic!("{:?}", e),
+                },
+                Err(TryRecvError::Closed) | Ok(()) => break,
             };
         }
     });
@@ -324,7 +323,7 @@ fn spinner(rx: Receiver<()>) {
 fn read_config() -> Result<Config> {
     let p = config_path();
     read_to_string(p)
-        .map_err(|e| anyhow!(e))
+        .context("Read configuration")
         .and_then(|content| serde_json::from_str(&content).map_err(|e| anyhow!(e)))
 }
 

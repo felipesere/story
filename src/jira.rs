@@ -5,7 +5,6 @@ use std::fmt::Display;
 use jsonpath::Selector;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use log::debug;
 
 use crate::Column;
 
@@ -102,7 +101,7 @@ impl JiraConfig {
         let client = surf::Client::new();
 
         let credentials = base64::encode(format!("{}:{}", self.auth.user, self.auth.personal_access_token));
-
+        
         let body: Value = client
             .get(&self.base_url)
             .header(
@@ -114,8 +113,6 @@ impl JiraConfig {
             .recv_json()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
-
-        debug!("The body was: {:?}", &body);
 
         let issues = Selector::new("$.issues")
             .unwrap()
@@ -142,49 +139,3 @@ impl JiraConfig {
         Ok(tasks)
     }
 }
-
-/*
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use indoc::indoc;
-    use maplit::hashmap;
-
-    #[test]
-    fn it_works() {
-        let raw = indoc! {r#"
-        enabled: true
-        auth:
-          user: foo
-          personal_access_token: bar
-        base_url: "https://x.y/abc"
-        query:
-          project: EOPS
-          status: "In Progress"
-          assignee: 61ba1
-        "#};
-
-        let config: JiraConfig = serde_yaml::from_str(raw).unwrap();
-        assert!(config.enabled);
-
-        assert_eq!(config.base_url, "https://x.y/abc");
-
-        assert_eq!(
-            config.auth,
-            JiraAuth {
-                user: "foo".to_string(),
-                personal_access_token: "bar".to_string(),
-            }
-        );
-
-        assert_eq!(
-            config.query,
-            Jql(hashmap! {
-                "project".to_string() => "EOPS".to_string(),
-                "status".to_string() => "In Progress".to_string(),
-                "assignee".to_string() => "61ba1".to_string(),
-            })
-        );
-    }
-}
-*/
