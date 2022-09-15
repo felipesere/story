@@ -50,6 +50,9 @@ enum SubCommand {
 
     #[clap(about = "Show and edit the story config")]
     Config(ConfigCmd),
+
+    #[clap(about = "Show the current story ID, if present")]
+    Current(CurrentCmd),
 }
 
 #[async_trait]
@@ -147,6 +150,32 @@ impl Run for SubCommand {
             Install(s) => s.run(root).await,
             Complete(s) => s.run(root).await,
             Config(s) => s.run(root).await,
+            Current(s) => s.run(root).await,
+        }
+    }
+}
+
+#[derive(Parser)]
+#[clap(
+color = clap::ColorChoice::Always,
+setting = DeriveDisplayOrder,
+)]
+struct CurrentCmd;
+
+#[async_trait]
+impl Run for CurrentCmd {
+    async fn run(self, root: &Path) -> Result<()> {
+        let story_file = root.join(".story");
+
+        if story_file.exists() {
+            let content = read_to_string(story_file).context("Unable to read story file")?;
+            let components: Vec<_> = content.split('=').collect();
+            let id = components[1].to_string();
+
+            println!("{id}");
+            Ok(())
+        } else {
+            anyhow::bail!("No story present")
         }
     }
 }
