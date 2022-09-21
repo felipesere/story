@@ -11,7 +11,7 @@ async-std = { version = "1.8.0", features = ["unstable", "attributes"]}
 async-trait = "0.1.42"
 base64 = "0.13.0"
 clap = { version = "^3.0" , features = ["derive", "color"] }
-colored_json = "2.1.0"
+colored_json = "3.0.1"
 console = "0.15.0"
 ctrlc = "3.1.7"
 dialoguer = { version = "^0.10", features = ["fuzzy-select"] }
