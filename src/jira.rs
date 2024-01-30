@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::fmt::Display;
 
+use base64::prelude::*;
 use jsonpath::Selector;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,7 +101,7 @@ impl JiraConfig {
 
         let client = surf::Client::new();
 
-        let credentials = base64::encode(format!(
+        let credentials = BASE64_STANDARD.encode(format!(
             "{}:{}",
             self.auth.user, self.auth.personal_access_token
         ));

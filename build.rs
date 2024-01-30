@@ -11,10 +11,7 @@ fn main() {
     let sha = built::util::get_repo_head(src.as_ref())
         .ok()
         .flatten()
-        .map(|(_, mut sha)| {
-            sha.truncate(7);
-            sha
-        })
+        .map(|(_, _, short_sha)| short_sha)
         .map(|sha| if dirty { format!("{}-dirty", sha) } else { sha })
         .or_else(|| std::env::var("GITHUB_SHA").ok())
         .unwrap_or_else(|| "none".into());

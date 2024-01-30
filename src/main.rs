@@ -12,7 +12,6 @@ use async_std::channel::{bounded, Receiver, TryRecvError};
 use async_std::fs::{remove_file, File};
 use async_std::prelude::*;
 use async_trait::async_trait;
-use clap::AppSettings::*;
 use clap::Parser;
 use colored_json::prelude::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
@@ -29,7 +28,6 @@ const HOOK_BASH: &str = include_str!("../hook.bash");
 #[derive(Parser)]
 #[clap(
 color = clap::ColorChoice::Always,
-setting = DeriveDisplayOrder,
 version = env!("FANCY_VERSION")
 )]
 struct Opts {
@@ -158,7 +156,6 @@ impl Run for SubCommand {
 #[derive(Parser)]
 #[clap(
 color = clap::ColorChoice::Always,
-setting = DeriveDisplayOrder,
 )]
 struct CurrentCmd;
 
@@ -183,7 +180,6 @@ impl Run for CurrentCmd {
 #[derive(Parser)]
 #[clap(
 color = clap::ColorChoice::Always,
-setting = DeriveDisplayOrder,
 )]
 struct InstallCmd {}
 
@@ -227,7 +223,6 @@ impl Run for InstallCmd {
 #[derive(Parser)]
 #[clap(
 color = clap::ColorChoice::Always,
-setting = DeriveDisplayOrder,
 )]
 struct CompleteCmd {}
 
@@ -243,7 +238,6 @@ impl Run for CompleteCmd {
 #[derive(Parser)]
 #[clap(
 color = clap::ColorChoice::Always,
-setting = DeriveDisplayOrder,
 )]
 struct ConfigCmd {
     /// Edit the configuration
@@ -289,7 +283,6 @@ impl Run for ConfigCmd {
 
 #[derive(Parser)]
 #[clap(
-setting = DeriveDisplayOrder,
 color = clap::ColorChoice::Always,
 )]
 struct SelectCmd {
