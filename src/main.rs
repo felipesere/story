@@ -45,7 +45,7 @@ enum SubCommand {
     #[clap(about = "Install the required prepare-message-hook and add an entry to .gitignore")]
     Install(InstallCmd),
 
-    #[clap(about = "Complete the story and remove it from .story")]
+    #[clap(alias = "done", about = "Complete the story and remove it from .story")]
     Complete(CompleteCmd),
 
     #[clap(about = "Show and edit the story config")]
